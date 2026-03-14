@@ -1,0 +1,144 @@
+#derived from https://github.com/UWDATA515/ci_example/blob/main/.github/workflows/build_test.yml
+
+# You can have multiple workflows that are triggered by different
+# events (eg a workflow that runs on branch pushes, versus a
+# workflow that runs when a GitHub issue is created). Give your
+# workflow a descriptive name so that you know what it is.
+name: CI
+
+# What is the event that triggers this workflow? Options include
+# push, pull_request, create, issues, etc. This configuration says
+# that you should run on pushes to the main branch (ie after a PR
+# is merged), or when a pull request is created to merge into main.
+
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  push:
+    branches:
+      - main
+  pull_request:
+    # Configuring this means that your PRs will get a GitHub comment
+    # from Coveralls with your coverage.
+    branches:
+      - main
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # In order to get Conda environments to work properly, we need to
+    # tell the runner to start up the bash shell in a way that respects
+    # the changes Conda makes to bash profile files.
+    # More at:
+    # https://github.com/marketplace/actions/setup-miniconda#use-a-default-shell
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    # We specify all versions of Python that we want to validate.
+    # GitHub will run the tests for each of these Python versions.
+    strategy:
+      matrix:
+        #python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.12"]
+
+    # The actual workflow steps!
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v3
+
+      # Runs a single command using the runners shell
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # This is an Action published by the Conda team to get your
+      # Conda environment set up using your environment.yml file.
+      # More at https://github.com/marketplace/actions/setup-miniconda
+      - name: Set up conda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          # Use the environment name from your environment.yml file
+          activate-environment: ci_example
+          # The name of the environment file you want conda to use
+          environment-file: environment.yml
+          # Whether you want conda to automatically update the conda
+          # version (helpful when some runners have old versions of
+          # conda)
+          auto-update-conda: true
+          # Which version of python you want conda to use
+          python-version: ${{ matrix.python-version }}
+          # We don't need the base environment, so don't activate it
+          auto-activate-base: false
+
+
+      # You don't normally need test coverage information when
+      # developing locally - we just want it in CI - so we install
+      # it here instead of in our environment file (which we also
+      # use locally).
+      - name: Install additional development dependencies
+        run: |
+          conda install --yes coverage
+      
+      # If there are any other steps in order for your tests to
+      # run successfully, you can add those steps here!
+
+      # Next step: run the unit tests with code coverage.
+      # #report consolidation assistance from gemini and coverage.py
+      #https://coverage.readthedocs.io/en/7.13.4/commands/cmd_combine.html#cmd-combine
+      #LCOV reporting
+      #https://coverage.readthedocs.io/en/6.5.0/cmd.html
+      - name: Unit tests
+        run: |
+          coverage run -m tests.test_address
+          coverage run -a -m tests.test_edge #new
+          coverage report
+          coverage lcov -o coverage.summary #new
+
+                # Next step: run pylint. Anything less than 10/10 will fail.
+      #            Once we've covered pylint in lecture, uncomment
+      #            the following lines.
+      # - name: Lint with pylint
+      #   run: |
+      #     pylint entropy/**/*.py
+
+      # Lastly: report code coverage to Coveralls.
+      - name: Report code coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          #base-path: Testing_CI
+          path-to-lcov: coverage.summary # new line added b/c of line 98
+          #path-to-lcov: coverage.lcov
+          #path-to-lcov: Testing_CI/coverage.lcov
+          # The following two options are needed for "parallel"
+          # runs - ie if you have a matrix of python versions.
+          # This holds off on reporting code coverage to
+          # coveralls until all runs are done. If you don't have
+          # a matrix, this isn't needed.
+          #flag-name: run-${{ join(matrix.*, ' - ') }}
+          #parallel: true
+
+  # After all the parallel matrix runs for build_test are done
+  # for the various python versions, we run this job to send the
+  # final code coverage to Coveralls.
+  #finish:
+    # This job requires that build_test be finished before it
+    # can run.
+  #  needs: build_test
+  #  if: ${{ always() }}
+  #  runs-on: ubuntu-latest
+  #  steps:
+  #  - name: Coveralls Finished
+  #    uses: coverallsapp/github-action@v2
+  #    with:
+# #      github-token: ${{ secrets.GITHUB_TOKEN }}
+  #      parallel-finished: true
